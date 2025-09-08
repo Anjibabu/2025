@@ -1,0 +1,90 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Moq;
+using Xunit;
+
+public class ScriptServiceTests
+{
+    private readonly Mock<IScriptInterpreter> _scriptInterpreterMock;
+    private readonly Mock<IScriptRepository> _scriptRepositoryMock;
+    private readonly ScriptService _sut;
+
+    public ScriptServiceTests()
+    {
+        _scriptInterpreterMock = new Mock<IScriptInterpreter>();
+        _scriptRepositoryMock = new Mock<IScriptRepository>();
+
+        // Assume ScriptService depends on IScriptInterpreter + IScriptRepository
+        _sut = new ScriptService(_scriptInterpreterMock.Object, _scriptRepositoryMock.Object);
+    }
+
+    [Fact]
+    public async Task CreateScript_ShouldThrow_WhenNameIsInvalid()
+    {
+        // Arrange
+        var sourceData = new ScriptSource { Name = "   ", Code = "print('Hello')" };
+
+        // Act + Assert
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _sut.CreateScript(sourceData, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateScript_ShouldThrow_WhenCodeIsEmpty()
+    {
+        // Arrange
+        var sourceData = new ScriptSource { Name = "TestScript", Code = "" };
+
+        // Act + Assert
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _sut.CreateScript(sourceData, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateScript_ShouldThrow_WhenScriptIsInvalid()
+    {
+        // Arrange
+        var sourceData = new ScriptSource { Name = "TestScript", Code = "print('Hello')" };
+        _scriptInterpreterMock
+            .Setup(x => x.IsScriptValid(sourceData, out It.Ref<string>.IsAny))
+            .ReturnsAsync(false);
+
+        // Act + Assert
+        await Assert.ThrowsAsync<ScriptException>(() =>
+            _sut.CreateScript(sourceData, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateScript_ShouldSave_WhenScriptIsValid()
+    {
+        // Arrange
+        var sourceData = new ScriptSource { Name = "TestScript", Code = "print('Hello')" };
+        _scriptInterpreterMock
+            .Setup(x => x.IsScriptValid(sourceData, out It.Ref<string>.IsAny))
+            .Callback(new IsScriptValidCallback((IScriptSource src, out string reason) =>
+            {
+                reason = string.Empty;
+            }))
+            .ReturnsAsync(true);
+
+        _scriptRepositoryMock
+            .Setup(x => x.SaveMetadata(It.IsAny<IScriptSource>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _scriptRepositoryMock
+            .Setup(x => x.SaveScriptSource(It.IsAny<IScriptSource>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _sut.CreateScript(sourceData, CancellationToken.None);
+
+        // Assert
+        Assert.Equal("TestScript", result);
+        _scriptRepositoryMock.Verify(x => x.SaveMetadata(sourceData, It.IsAny<CancellationToken>()), Times.Once);
+        _scriptRepositoryMock.Verify(x => x.SaveScriptSource(sourceData), Times.Once);
+    }
+
+    // Helper delegate for handling "out var"
+    private delegate void IsScriptValidCallback(IScriptSource source, out string invalidReason);
+}
