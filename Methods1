@@ -4,86 +4,415 @@ using System.Threading.Tasks;
 using Moq;
 using Xunit;
 
-public class ScriptServiceTests
+public class ScriptRepository_CoverageTests
 {
-    private readonly Mock<IScriptInterpreter> _scriptInterpreterMock;
-    private readonly Mock<IScriptRepository> _scriptRepositoryMock;
-    private readonly ScriptService _sut;
+    private readonly FakeFileSystem _fs = new();
+    private readonly Mock<IScriptInterpreter> _interp = new(MockBehavior.Strict);
 
-    public ScriptServiceTests()
+    // Simulated extension map
+    private readonly Dictionary<FileType, string> _ext = new()
     {
-        _scriptInterpreterMock = new Mock<IScriptInterpreter>();
-        _scriptRepositoryMock = new Mock<IScriptRepository>();
+        { FileType.Metadata, ".json" },
+        { FileType.Source,   ".py"   }
+    };
 
-        // Assume ScriptService depends on IScriptInterpreter + IScriptRepository
-        _sut = new ScriptService(_scriptInterpreterMock.Object, _scriptRepositoryMock.Object);
+    // ----- Helpers to assemble “repository under test” -----
+
+    private ScriptRepositoryUnderTest BuildRepo()
+        => new(_fs, _interp.Object, _ext);
+
+    private static ScriptSource Src(string name, string code = "print('ok')") =>
+        new(name, code, Description: "d", HelpText: "h");
+
+    // ----- CreateScript -----
+
+    [Fact]
+    public async Task CreateScript_Throws_WhenNameCleansToEmpty()
+    {
+        var repo = BuildRepo();
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repo.CreateScript(Src("   ", "print()")));
+        Assert.Contains("valid name", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task CreateScript_ShouldThrow_WhenNameIsInvalid()
+    public async Task CreateScript_Throws_WhenCodeMissing()
     {
-        // Arrange
-        var sourceData = new ScriptSource { Name = "   ", Code = "print('Hello')" };
-
-        // Act + Assert
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            _sut.CreateScript(sourceData, CancellationToken.None));
+        var repo = BuildRepo();
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repo.CreateScript(Src("abc", "")));
+        Assert.Contains("doesn't include any code", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task CreateScript_ShouldThrow_WhenCodeIsEmpty()
+    public async Task CreateScript_Throws_WhenInterpreterSaysInvalid()
     {
-        // Arrange
-        var sourceData = new ScriptSource { Name = "TestScript", Code = "" };
+        var repo = BuildRepo();
+        _interp.Setup(i => i.IsScriptValid(It.IsAny<IScriptSource>(), out It.Ref<string>.IsAny))
+               .Returns((IScriptSource s, out string reason) =>
+               {
+                   reason = "nope";
+                   return Task.FromResult(false);
+               });
 
-        // Act + Assert
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            _sut.CreateScript(sourceData, CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<ScriptException>(() =>
+            repo.CreateScript(Src("abc", "print('x')")));
+        Assert.Contains("code is invalid", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task CreateScript_ShouldThrow_WhenScriptIsInvalid()
+    public async Task CreateScript_CreatesBothFiles_OnValidInput()
     {
-        // Arrange
-        var sourceData = new ScriptSource { Name = "TestScript", Code = "print('Hello')" };
-        _scriptInterpreterMock
-            .Setup(x => x.IsScriptValid(sourceData, out It.Ref<string>.IsAny))
-            .ReturnsAsync(false);
+        var repo = BuildRepo();
+        _interp.Setup(i => i.IsScriptValid(It.IsAny<IScriptSource>(), out It.Ref<string>.IsAny))
+               .Returns((IScriptSource s, out string reason) =>
+               {
+                   reason = "";
+                   return Task.FromResult(true);
+               });
 
-        // Act + Assert
-        await Assert.ThrowsAsync<ScriptException>(() =>
-            _sut.CreateScript(sourceData, CancellationToken.None));
+        var name = await repo.CreateScript(Src("  abc  ", "print('x')"));
+        Assert.Equal("abc", name);
+
+        var meta = _fs.GetFiles($"*{_ext[FileType.Metadata]}").SingleOrDefault();
+        var src  = _fs.GetFiles($"*{_ext[FileType.Source]}").SingleOrDefault();
+        Assert.NotNull(meta);
+        Assert.NotNull(src);
+    }
+
+    // ----- UpdateScript -----
+
+    [Fact]
+    public async Task UpdateScript_Throws_WhenCodeMissing()
+    {
+        var repo = BuildRepo();
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repo.UpdateScript(Src("abc", "")));
+        Assert.Contains("doesn't include any code", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task CreateScript_ShouldSave_WhenScriptIsValid()
+    public async Task UpdateScript_Throws_WhenNameMissing()
     {
-        // Arrange
-        var sourceData = new ScriptSource { Name = "TestScript", Code = "print('Hello')" };
-        _scriptInterpreterMock
-            .Setup(x => x.IsScriptValid(sourceData, out It.Ref<string>.IsAny))
-            .Callback(new IsScriptValidCallback((IScriptSource src, out string reason) =>
-            {
-                reason = string.Empty;
-            }))
-            .ReturnsAsync(true);
-
-        _scriptRepositoryMock
-            .Setup(x => x.SaveMetadata(It.IsAny<IScriptSource>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        _scriptRepositoryMock
-            .Setup(x => x.SaveScriptSource(It.IsAny<IScriptSource>()))
-            .Returns(Task.CompletedTask);
-
-        // Act
-        var result = await _sut.CreateScript(sourceData, CancellationToken.None);
-
-        // Assert
-        Assert.Equal("TestScript", result);
-        _scriptRepositoryMock.Verify(x => x.SaveMetadata(sourceData, It.IsAny<CancellationToken>()), Times.Once);
-        _scriptRepositoryMock.Verify(x => x.SaveScriptSource(sourceData), Times.Once);
+        var repo = BuildRepo();
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repo.UpdateScript(Src("  ", "print()")));
+        Assert.Contains("No script name provided", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task UpdateScript_Throws_WhenNotExist()
+    {
+        var repo = BuildRepo();
+        _interp.Setup(i => i.IsScriptValid(It.IsAny<IScriptSource>(), out It.Ref<string>.IsAny))
+               .Returns((IScriptSource s, out string reason) =>
+               {
+                   reason = "";
+                   return Task.FromResult(true);
+               });
+
+        var ex = await Assert.ThrowsAsync<ScriptException>(() =>
+            repo.UpdateScript(Src("missing", "print()")));
+        Assert.Contains("does not exist", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateScript_Throws_WhenInterpreterInvalid()
+    {
+        var repo = BuildRepo();
+
+        // Ensure it "exists" first — seed files:
+        SeedValid("exists", code: "print('old')");
+
+        _interp.Setup(i => i.IsScriptValid(It.IsAny<IScriptSource>(), out It.Ref<string>.IsAny))
+               .Returns((IScriptSource s, out string reason) =>
+               {
+                   reason = "err";
+                   return Task.FromResult(false);
+               });
+
+        var ex = await Assert.ThrowsAsync<ScriptException>(() =>
+            repo.UpdateScript(Src("exists", "bad")));
+        Assert.Contains("code is invalid", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateScript_Saves_WhenValid()
+    {
+        var repo = BuildRepo();
+
+        SeedValid("exists", code: "print('old')");
+
+        _interp.Setup(i => i.IsScriptValid(It.IsAny<IScriptSource>(), out It.Ref<string>.IsAny))
+               .Returns((IScriptSource s, out string reason) =>
+               {
+                   reason = "";
+                   return Task.FromResult(true);
+               });
+
+        await repo.UpdateScript(Src("exists", "print('new')"));
+
+        var src = _fs.GetFiles($"*{_ext[FileType.Source]}").Single();
+        var text = await src.ReadAllTextAsync();
+        Assert.Contains("print('new')", text);
+    }
+
+    [Fact]
+    public async Task UpdateScript_Wraps_SaveFailures()
+    {
+        var repo = BuildRepo();
+
+        SeedValid("exists", code: "print('old')");
+
+        _interp.Setup(i => i.IsScriptValid(It.IsAny<IScriptSource>(), out It.Ref<string>.IsAny))
+               .Returns((IScriptSource s, out string reason) =>
+               {
+                   reason = "";
+                   return Task.FromResult(true);
+               });
+
+        // sabotage metadata writer by using a path that cannot be created
+        repo.FailCreate = FileType.Metadata;
+
+        var ex = await Assert.ThrowsAsync<ScriptException>(() =>
+            repo.UpdateScript(Src("exists", "print('new')")));
+
+        Assert.Contains("Failed to save the update", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ----- DeleteScript -----
+
+    [Fact]
+    public async Task DeleteScript_Throws_WhenNameEmpty()
+    {
+        var repo = BuildRepo();
+        await Assert.ThrowsAsync<ArgumentException>(() => repo.DeleteScript("  "));
+    }
+
+    [Fact]
+    public async Task DeleteScript_NoOp_WhenFilesMissing()
+    {
+        var repo = BuildRepo();
+        await repo.DeleteScript("ghost");
+        // should not throw
+    }
+
+    [Fact]
+    public async Task DeleteScript_Deletes_BothFiles()
+    {
+        var repo = BuildRepo();
+        SeedValid("toDel", "print()");
+
+        await repo.DeleteScript("toDel");
+
+        Assert.Empty(_fs.GetFiles($"*{_ext[FileType.Metadata]}"));
+        Assert.Empty(_fs.GetFiles($"*{_ext[FileType.Source]}"));
+    }
+
+    // ----- GetScriptNames -----
+
+    [Fact]
+    public async Task GetScriptNames_MergesAndDedups()
+    {
+        SeedValid("one");
+        // source only
+        _fs.EnsureFile("two" + _ext[FileType.Source], "print()");
+        // metadata only
+        using (var s = _fs.CreateFileInfo(Path.Combine(_fs.Root, "three" + _ext[FileType.Metadata])).Create())
+        using (var w = new Utf8JsonWriter(s))
+        {
+            JsonSerializer.Serialize(w, new ScriptSource("three", "print()"));
+        }
+
+        var repo = BuildRepo();
+
+        var names = new List<string>();
+        await foreach (var n in repo.GetScriptNames())
+            names.Add(n);
+
+        Assert.True(names.Contains("one"));
+        Assert.True(names.Contains("two"));
+        Assert.True(names.Contains("three"));
+        Assert.Equal(3, names.Count);
+    }
+
+    // ----- GetScript -----
+
+    [Fact]
+    public async Task GetScript_Throws_OnEmptyName()
+    {
+        var repo = BuildRepo();
+        await Assert.ThrowsAsync<ArgumentException>(() => repo.GetScript("  "));
+    }
+
+    [Fact]
+    public async Task GetScript_Throws_WhenNotExist()
+    {
+        var repo = BuildRepo();
+        await Assert.ThrowsAsync<ScriptException>(() => repo.GetScript("ghost"));
+    }
+
+    [Fact]
+    public async Task GetScript_Throws_WhenSourceMissing()
+    {
+        // metadata but no source
+        using (var s = _fs.CreateFileInfo(Path.Combine(_fs.Root, "metaOnly.json")).Create())
+        using (var w = new Utf8JsonWriter(s))
+        {
+            JsonSerializer.Serialize(w, new ScriptSource("metaOnly", "print()"));
+        }
+
+        var repo = BuildRepo();
+        await Assert.ThrowsAsync<ScriptException>(() => repo.GetScript("metaOnly"));
+    }
+
+    [Fact]
+    public async Task GetScript_Throws_WhenMetadataMissingButSourceReadFails()
+    {
+        // no metadata, but "source" file will be missing to force InvalidOperation in helper
+        var repo = BuildRepo();
+        await Assert.ThrowsAsync<ScriptException>(() => repo.GetScript("missingMeta"));
+    }
+
+    [Fact]
+    public async Task GetScript_Returns_MergedSourceAndMetadata()
+    {
+        SeedValid("full", "print('body')");
+
+        var repo = BuildRepo();
+        var src = await repo.GetScript("full");
+
+        Assert.Equal("full", src.Name);
+        Assert.Equal("print('body')", src.Code);
+        Assert.Equal("d", src.Description);
+        Assert.Equal("h", src.HelpText);
+    }
+
+    // ----- ReloadCache -----
+
+    [Fact]
+    public async Task ReloadCache_DelegatesToInterpreter()
+    {
+        var repo = BuildRepo();
+        _interp.Setup(i => i.ReloadCache(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask).Verifiable();
+
+        await repo.ReloadCache();
+
+        _interp.Verify();
+    }
+
+    // ----- GetScriptSourceData -----
+
+    [Fact]
+    public async Task GetScriptSourceData_Throws_WhenSourceMissing()
+    {
+        var repo = BuildRepo();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repo.Invoke_GetScriptSourceData("none"));
+    }
+
+    [Fact]
+    public async Task GetScriptSourceData_Returns_Text()
+    {
+        SeedValid("hasSource", "print(1)");
+        var repo = BuildRepo();
+        var txt = await repo.Invoke_GetScriptSourceData("hasSource");
+        Assert.Contains("print(1)", txt);
+    }
+
+    // ----- GetScriptMetadata -----
+
+    [Fact]
+    public async Task GetScriptMetadata_Builds_FromSource_WhenMetadataMissing()
+    {
+        _fs.EnsureFile("solo.py", "print('x')");
+        var repo = BuildRepo();
+        var md = await repo.Invoke_GetScriptMetadata("solo");
+
+        Assert.Equal("solo", md.Name);
+        Assert.Equal("print('x')", ((ScriptSource)md).Code);
+    }
+
+    [Fact]
+    public async Task GetScriptMetadata_Throws_WhenJsonInvalid()
+    {
+        var bad = _fs.CreateFileInfo(Path.Combine(_fs.Root, "bad.json"));
+        using (var s = bad.Create())
+        using (var sw = new StreamWriter(s, Encoding.UTF8, 1024, leaveOpen: true))
+            sw.Write("{ not json }");
+        s.Flush();
+
+        var repo = BuildRepo();
+        var ex = await Assert.ThrowsAsync<ScriptException>(() => repo.Invoke_GetScriptMetadata("bad"));
+        Assert.Contains("invalid", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetScriptMetadata_Returns_Deserialized_WhenOk()
+    {
+        using (var s = _fs.CreateFileInfo(Path.Combine(_fs.Root, "good.json")).Create())
+        using (var w = new Utf8JsonWriter(s))
+        {
+            JsonSerializer.Serialize(w, new ScriptSource("good", "print()"));
+        }
+
+        var repo = BuildRepo();
+        var md = await repo.Invoke_GetScriptMetadata("good");
+        Assert.Equal("good", md.Name);
+    }
+
+    // ----- CheckScriptStatus (via public surface) -----
+
+    [Fact]
+    public async Task CheckScriptStatus_Corrupted_WhenOnlyOneFile()
+    {
+        // only source
+        _fs.EnsureFile("only.py", "print()");
+        var repo = BuildRepo();
+
+        // Update requires existence -> should fail with 'corrupted/not exist'.
+        var ex = await Assert.ThrowsAsync<ScriptException>(() =>
+            repo.UpdateScript(Src("only", "print()")));
+
+        // message is enough to prove branch covered
+        Assert.Contains("does not exist", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ----- SaveMetadata / SaveScriptSource error wrappers -----
+
+    [Fact]
+    public async Task CreateScript_Wraps_SaveFailures()
+    {
+        var repo = BuildRepo();
+        _interp.Setup(i => i.IsScriptValid(It.IsAny<IScriptSource>(), out It.Ref<string>.IsAny))
+               .Returns((IScriptSource s, out string reason) =>
+               {
+                   reason = "";
+                   return Task.FromResult(true);
+               });
+
+        // sabotage script source write
+        repo.FailCreate = FileType.Source;
+
+        var ex = await Assert.ThrowsAsync<ScriptException>(() =>
+            repo.CreateScript(Src("boom")));
+        Assert.Contains("failed to store the script", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ----- Utilities -----
+
+    private void SeedValid(string name, string code = "print()")
+    {
+        // metadata
+        using (var s = _fs.CreateFileInfo(Path.Combine(_fs.Root, name + _ext[FileType.Metadata])).Create())
+        using (var w = new Utf8JsonWriter(s))
+        {
+            JsonSerializer.Serialize(w, new ScriptSource(name, code, "d", "h"));
+        }
+        // source
+        _fs.EnsureFile(name + _ext[FileType.Source], code);
+    }
+}
 
     // Helper delegate for handling "out var"
     private delegate void IsScriptValidCallback(IScriptSource source, out string invalidReason);
