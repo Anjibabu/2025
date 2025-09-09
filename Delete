@@ -1,0 +1,10 @@
+ [Fact]
+    public void DeleteScript_ShouldThrowArgumentException_WhenScriptNameIsEmpty()
+    {
+        // Arrange
+        var manager = new ScriptManager();
+
+        // Act & Assert
+        var ex = Assert.Throws<ArgumentException>(() => manager.DeleteScript("   "));
+        Assert.Equal("given script name is empty. (Parameter 'scriptName')", ex.Message);
+    }
