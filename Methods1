@@ -13,6 +13,9 @@ Serilog.AspNetCore → seamless integration with the ASP.NET Core pipeline.
 This ensures all applications share a consistent, maintainable, and configurable logging experience.
 
 
+mention the Files/ Folder path
+
+
 Reusing gRPC Client Factory Across Multiple Applications:--
 
 When multiple applications need to call the same gRPC services, it is inefficient to configure each gRPC client separately. The gRPC Client Factory provides a reusable way to:
@@ -22,3 +25,5 @@ Register gRPC clients centrally.
 Manage lifetime, pooling, and resilience automatically.
 
 Reuse configuration across APIs, workers, and console apps.
+
+mention the Files/ Folder path
