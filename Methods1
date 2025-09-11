@@ -27,3 +27,41 @@ Manage lifetime, pooling, and resilience automatically.
 Reuse configuration across APIs, workers, and console apps.
 
 mention the Files/ Folder path
+
+======================================================================================================================================
+gRPC Client Factory
+
+Part of the .NET hosting and dependency injection system.
+
+Allows applications to request MyService.MyServiceClient (generated client) via dependency injection.
+
+Internally handles connection reuse and HTTP/2 settings.
+
+Centralized Registration
+
+Instead of repeating configuration in each app, create a shared project or NuGet package (e.g., Company.GrpcClients).
+
+This project registers all required gRPC clients.
+
+Each consuming application only calls the shared setup method.
+
+Configuration Driven
+
+gRPC service endpoints are defined in configuration (appsettings.json).
+
+Each application can point to different environments (Development, Test, Production) without changing code.
+
+Resilience
+
+Built-in integration with Polly policies for retries, circuit breakers, and timeouts.
+
+Ensures consistent error handling across applications.
+
+Multi-Application Reuse
+
+Web APIs can inject gRPC clients to call downstream services.
+
+Worker services can inject the same clients for background processing.
+
+Console apps or utilities can also reuse the same setup.
+===================================================================================================================================
