@@ -1,163 +1,54 @@
-Logging with Serilog Across Multiple Applications
-1. Purpose
-
-In modern .NET solutions, we often have multiple applications such as APIs, worker services, console utilities, and background jobs.
-To avoid duplicating logging setup in each project, we establish a centralized and reusable logging approach using:
-
-Microsoft Logger Abstraction → the standard logging interface.
-
-Serilog → the structured logging provider.
-
-Serilog.AspNetCore → seamless integration with the ASP.NET Core pipeline.
-
-This ensures all applications share a consistent, maintainable, and configurable logging experience.
-
-
-mention the Files/ Folder path
-
-
-Reusing gRPC Client Factory Across Multiple Applications:--
-
-When multiple applications need to call the same gRPC services, it is inefficient to configure each gRPC client separately. The gRPC Client Factory provides a reusable way to:
-
-Register gRPC clients centrally.
-
-Manage lifetime, pooling, and resilience automatically.
-
-Reuse configuration across APIs, workers, and console apps.
-
-mention the Files/ Folder path
-
-======================================================================================================================================
-gRPC Client Factory
-
-Part of the .NET hosting and dependency injection system.
-
-Allows applications to request MyService.MyServiceClient (generated client) via dependency injection.
-
-Internally handles connection reuse and HTTP/2 settings.
-
-Centralized Registration
-
-Instead of repeating configuration in each app, create a shared project or NuGet package (e.g., Company.GrpcClients).
-
-This project registers all required gRPC clients.
-
-Each consuming application only calls the shared setup method.
-
-Configuration Driven
-
-gRPC service endpoints are defined in configuration (appsettings.json).
-
-Each application can point to different environments (Development, Test, Production) without changing code.
-
-Resilience
-
-Built-in integration with Polly policies for retries, circuit breakers, and timeouts.
-
-Ensures consistent error handling across applications.
-
-Multi-Application Reuse
-
-Web APIs can inject gRPC clients to call downstream services.
-
-Worker services can inject the same clients for background processing.
-
-Console apps or utilities can also reuse the same setup.
-===================================================================================================================================
-
-
-mention the Files/ Folder path for the Authentication-related
-
-
-📘 Authentication Reuse Across Multiple Applications
-1. Purpose
-
-In a distributed system with multiple APIs, worker services, and client applications, it is inefficient and inconsistent to implement authentication separately in each application.
-
-By centralizing JWT token authentication and network authentication policies, we can:
-
-Ensure consistent security across all applications.
-
-Reduce duplication of configuration.
-
-Simplify maintenance and future improvements.
-
-2. Key Concepts
-🔹 JSON Web Token (JWT) Authentication
-
-What it is: JWT is a token-based authentication mechanism where the server issues a signed token after successful login.
-
-How it works:
-
-User authenticates (e.g., with username/password, OAuth2, or identity provider).
-
-Server issues a JWT containing user claims (roles, permissions, identity).
-
-The JWT is sent by the client on every request via the Authorization header.
-
-Applications validate the token signature, expiration, and claims.
-
-Why reuse: Every application can use the same JWT validation logic, ensuring unified authentication and authorization.
-
-🔹 Network Authentication (Shared Policies)
-
-What it is: A standardized way of handling cross-application authentication over HTTP/gRPC within the internal network.
-
-How it works:
-
-Applications enforce incoming requests to require valid JWTs.
-
-Outgoing requests between services automatically include a valid token (retrieved from a secure token provider or identity server).
-
-Token validation uses shared keys, certificates, or identity provider endpoints.
-
-Why reuse: Instead of hardcoding token validation or service-to-service credentials in each application, we centralize this in a shared authentication library.
-
-3. Typical Workflow
-
-Centralized Authentication Library
-
-A shared library defines JWT validation rules (issuer, audience, signing key).
-
-It contains common middleware/configuration for token validation.
-
-Token Issuance
-
-A single Identity Provider (IdP) (e.g., IdentityServer, Auth0, Azure AD, Keycloak) issues JWTs.
-
-All applications trust tokens from the same issuer.
-
-Application Reuse
-
-Each application references the shared authentication library.
-
-The library hooks into the application pipeline (ASP.NET Core middleware or gRPC interceptors).
-
-Network Calls
-
-For service-to-service calls, the shared library automatically attaches tokens to outgoing requests.
-
-Downstream services validate these tokens using the same centralized configuration.
-
-4. Benefits
-
-Consistency → All applications use the same token validation rules.
-
-Security → Centralized management of signing keys, issuers, and policies.
-
-Reusability → One library used across APIs, worker services, and gRPC clients.
-
-Flexibility → Different applications can override settings (e.g., audiences or scopes).
-
-Maintainability → Security updates apply everywhere without modifying each app.
-
-5. Extensibility
-
-Role & Claim Enforcement → Standardize role/permission checks across apps.
-
-Multi-Tenant Support → Handle different audiences for different clients.
-
-Service-to-Service Authentication → Use client credentials flow to get tokens for background jobs.
-
-Observability → Add logging and metrics for failed/successful authentications.
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sidebar UI</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      display: flex;
+      height: 100vh;
+    }
+
+    .sidebar {
+      width: 220px;
+      background: #f5f5f5;
+      padding: 15px;
+      border-right: 1px solid #ddd;
+    }
+
+    .menu-item {
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 10px;
+      cursor: pointer;
+    }
+
+    .menu-item:hover {
+      background: #eaeaea;
+    }
+
+    .main {
+      flex: 1;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="menu-item">Line ▼</div>
+    <div class="menu-item">Logical Units</div>
+    <div class="menu-item">Data Points</div>
+    <div class="menu-item">Uplink Authorization</div>
+    <div class="menu-item">Clear Obsolete Alarms</div>
+  </div>
+
+  <div class="main">
+    <!-- Empty space to match screenshot -->
+  </div>
+</body>
+</html>
