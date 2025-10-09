@@ -78,7 +78,8 @@
       // Toggle on button click
       $('#notificationBtn').on('click', function (e) {
         e.stopPropagation(); // prevent closing when clicking button
-        popover.toggle();
+       popover.show();
+			$(".popover-body").html(tableData);
       });
 
       // Close popover when clicking anywhere else
